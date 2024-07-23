@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
+use crate::fatal;
+
 use super::resource_path::ResourcePath;
 use anyhow::Context;
+use reqwest::StatusCode;
 use tracing::warn;
 
-const MAX_TRIES: u32 = 5;
+const MAX_TRIES: u32 = 3;
 
 macro_rules! loop_load {
     {$path: expr; $s: expr} => {{
@@ -16,7 +19,7 @@ macro_rules! loop_load {
                 warn!("Failed to retrieve item {}, {:?}", $path, result);
             }
         }
-        panic!("Could not retrive {} after {MAX_TRIES} tries. Quitting.", $path);
+        fatal!("Could not retrieve {} after {MAX_TRIES} tries. Quitting.", $path);
     }};
 }
 
@@ -39,9 +42,13 @@ async fn load_local(mut source: PathBuf, path: &PathBuf) -> anyhow::Result<Strin
 }
 
 async fn load_url(url: &str) -> anyhow::Result<String> {
-    reqwest::get(url)
-        .await
-        .context("Failed to get resource!")?
+    let response = reqwest::get(url).await.context("Failed to get resource!")?;
+
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("Status code is not OK.")
+    }
+
+    response
         .text()
         .await
         .context("Failed to read text from response")

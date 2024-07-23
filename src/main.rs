@@ -12,7 +12,7 @@ use tracing::info;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct CLIArguments {
-    #[arg(short, long, default_value = ".")]
+    #[arg(short, long, default_value = "./src")]
     source: String,
 
     #[arg(short, long, default_value = "./build")]
@@ -37,23 +37,34 @@ async fn main() -> anyhow::Result<()> {
         destination.display()
     );
 
-    let (resource_worker, queue) = worker::Worker::new();
+    let (resource_worker, queue) = worker::Worker::new(source.clone());
+    tokio::spawn(resource_worker.work());
+
+    let template_registry = theme::TemplateRegistry::new(queue.clone());
 
     // spawn the resource worker
-    tokio::spawn(resource_worker.work(source.clone()));
 
-    let mut joinset = JoinSet::new();
-
-    for _ in 0..10 {
-        let queue_ = queue.clone();
-
-        joinset.spawn(async move {
-            let cell = queue_.submit("https://mriganka.xyz/blog").await.unwrap();
-            info!("{}", cell.get().await);
-        });
-    }
-
-    while joinset.join_next().await.is_some() {}
+    // let mut joinset = JoinSet::new();
+    //
+    // for _ in 0..3 {
+    //     let queue_ = queue.clone();
+    //
+    //     joinset.spawn(async move {
+    //         let cell = queue_.submit("https://google.com/xyzw").await.unwrap();
+    //         info!("{}", cell.get().await);
+    //     });
+    // }
+    //
+    // for _ in 0..3 {
+    //     let queue_ = queue.clone();
+    //
+    //     joinset.spawn(async move {
+    //         let cell = queue_.submit("index.md").await.unwrap();
+    //         info!("{}", cell.get().await);
+    //     });
+    // }
+    //
+    // while joinset.join_next().await.is_some() {}
 
     // spawn the directory walker
     // tokio::spawn(walker::walker_entrypoint(

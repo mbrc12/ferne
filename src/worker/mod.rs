@@ -1,14 +1,20 @@
+// Responsible for caching and loading files from the web or local fs,
+// and retrying upon fail. The worker is run on a separate thread
+// by the runtime, as started from main. The files are returned
+// as LoadResponse's, which are lazily loaded files.
+
 mod loaders;
 mod resource;
 mod resource_path;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use anyhow::Context;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
 
 use resource::Resource;
+
+use crate::fatal_if_err;
 
 pub type LoadResponse = Resource<String>;
 
@@ -17,10 +23,10 @@ struct LoadTask {
     chan: oneshot::Sender<LoadResponse>,
 }
 
-pub type TemplateRegistry = Arc<RwLock<handlebars::Handlebars<'static>>>;
-type FileIndex = Arc<RwLock<HashMap<String, Resource<String>>>>;
+type FileIndex = Arc<RwLock<HashMap<String, LoadResponse>>>;
 
 pub struct Worker {
+    source: PathBuf,
     queue: mpsc::Receiver<LoadTask>,
     files: FileIndex,
 }
@@ -29,7 +35,9 @@ pub struct Worker {
 pub struct SubmitQueue(mpsc::Sender<LoadTask>);
 
 impl SubmitQueue {
-    pub async fn submit<T: ToString>(self: Self, path: T) -> anyhow::Result<LoadResponse> {
+    // panic if submit fails,
+    // does not make sense to propagate handling this error into the caller
+    pub async fn submit<T: ToString>(self: Self, path: T) -> LoadResponse {
         let path = path.to_string();
 
         info!("Queueing fetch for {}", path);
@@ -37,22 +45,18 @@ impl SubmitQueue {
         let (send, recv) = oneshot::channel::<LoadResponse>();
         let task = LoadTask { path, chan: send };
 
-        self.0
-            .send(task)
-            .await
-            .context("Failed to send task to worker!")?;
-
-        recv.await
-            .context("Failed to receive response from worker!")
+        fatal_if_err! { self.0.send(task).await; "Failed to send task to worker" };
+        fatal_if_err! { recv.await; "Failed to receive response from worker!" }
     }
 }
 
 impl Worker {
-    pub fn new() -> (Self, SubmitQueue) {
+    pub fn new(source: PathBuf) -> (Self, SubmitQueue) {
         let (submit_queue, ingest_queue) = mpsc::channel(16);
 
         (
             Worker {
+                source,
                 queue: ingest_queue,
                 files: Arc::new(RwLock::new(HashMap::new())),
             },
@@ -60,8 +64,12 @@ impl Worker {
         )
     }
 
-    pub async fn work(self, source: PathBuf) {
-        let Worker { mut queue, files } = self;
+    pub async fn work(self) {
+        let Worker {
+            source,
+            mut queue,
+            files,
+        } = self;
 
         loop {
             let LoadTask { path, chan } = {
@@ -85,31 +93,27 @@ impl Worker {
 }
 
 async fn process_single(source: PathBuf, path: String, files: FileIndex) -> LoadResponse {
-    let cell = {
-        let files_read = files.read().await;
+    let files_read = files.read().await;
 
-        if let Some(cell) = files_read.get(&path) {
-            cell.clone()
-        } else {
-            drop(files_read); // release the read the lock
+    if let Some(cell) = files_read.get(&path) {
+        cell.clone()
+    } else {
+        drop(files_read); // release the read the lock
 
-            let path_ = path.clone();
+        let path_ = path.clone();
 
-            let cell = Resource::new(move || {
-                let path__ = path_.clone();
-                let source_ = source.clone();
-                Box::pin(async { loaders::load_any(source_, path__).await })
-            });
+        let cell = Resource::new(move || {
+            let path__ = path_.clone();
+            let source_ = source.clone();
+            Box::pin(async { loaders::load_any(source_, path__).await })
+        });
 
-            let mut files_write = files.write().await;
-            files_write.insert(path, cell.clone());
-            drop(files_write);
+        let mut files_write = files.write().await;
+        files_write.insert(path, cell.clone());
+        drop(files_write);
 
-            cell
-        }
+        cell
+    }
 
-        // otherwise files_read is dropped here anyway
-    };
-
-    cell
+    // otherwise files_read is dropped here anyway
 }

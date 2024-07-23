@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tracing::info;
 
-use crate::worker::{SubmitQueue, TemplateRegistry};
+use crate::{theme::TemplateRegistry, worker::SubmitQueue};
 
 pub struct WalkerConfig {
     pub source: PathBuf,
@@ -24,16 +24,16 @@ pub struct Route {
     children: Vec<Route>,
 }
 
-pub async fn walker_entrypoint(
-    config: WalkerConfig,
-    queue: SubmitQueue,
-    registry: TemplateRegistry,
-) {
+pub async fn walk(config: WalkerConfig, queue: SubmitQueue, registry: TemplateRegistry) {
     info!("Loading walker...");
-    let route_tree = walk(config, queue, registry).await;
+    let route_tree = walk_rec(config, queue, registry).await;
     todo!()
 }
 
-pub async fn walk(config: WalkerConfig, queue: SubmitQueue, registry: TemplateRegistry) -> Route {
+pub async fn walk_rec(
+    config: WalkerConfig,
+    queue: SubmitQueue,
+    registry: TemplateRegistry,
+) -> Route {
     todo!()
 }

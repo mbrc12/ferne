@@ -5,7 +5,8 @@ use anyhow::Context;
 const REPLACE_FLAG: &str = "__replace__";
 
 /// Recursively merge toml tables, but ensure that the overlay table is of higher priority in the
-/// merging
+/// merging. Arrays and tables are merged by default, and replaced only if the entire table has the
+/// __replace__ key set as __replace__=true
 pub fn merge(mut base: toml::Table, overlay: toml::Table) -> anyhow::Result<toml::Table> {
     let mut replace = false;
     if overlay.contains_key(REPLACE_FLAG) {
@@ -30,7 +31,7 @@ pub fn merge(mut base: toml::Table, overlay: toml::Table) -> anyhow::Result<toml
                         if let Array(mut overlay_array) = value {
                             array.extend(overlay_array.drain(..));
                         } else {
-                            return Err(anyhow::anyhow!("Type error during array merge!"));
+                            anyhow::bail!("Type error during array merge!");
                         }
                     }
                 }
@@ -40,7 +41,7 @@ pub fn merge(mut base: toml::Table, overlay: toml::Table) -> anyhow::Result<toml
                         if let Table(overlay_table) = value {
                             *previous_value = Table(merge(table.clone(), overlay_table)?)
                         } else {
-                            return Err(anyhow::anyhow!("Type error during table merge!"));
+                            anyhow::bail!("Type error during table merge!");
                         }
                     } else {
                         *previous_value = value;
