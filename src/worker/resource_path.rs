@@ -13,8 +13,8 @@ impl Display for ResourcePath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ResourcePath::*;
         match self {
-            Local(path) => f.write_fmt(format_args!("[Local resource: {}]", path.display())),
-            URL(url) => f.write_fmt(format_args!("[URL: {url}]")),
+            Local(path) => f.write_fmt(format_args!("[Local resource: `{}`]", path.display())),
+            URL(url) => f.write_fmt(format_args!("[URL: `{url}`]")),
         }
     }
 }

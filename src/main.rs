@@ -6,7 +6,7 @@ mod worker;
 use std::path::PathBuf;
 
 use clap::Parser;
-use tokio::task::JoinSet;
+// use tokio::task::JoinSet;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -41,6 +41,10 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(resource_worker.work());
 
     let template_registry = theme::TemplateRegistry::new(queue.clone());
+
+    walker::Walker::new(source, destination, queue, template_registry)
+        .walk()
+        .await;
 
     // spawn the resource worker
 

@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::worker::SubmitQueue;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TemplateRegistry {
     queue: SubmitQueue,
     hb: Arc<RwLock<Handlebars<'static>>>,

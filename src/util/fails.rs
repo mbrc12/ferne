@@ -8,7 +8,8 @@ macro_rules! fatal {
 }
 
 // Evaluate a Result, and returns the contained Ok if possible,
-// else fatal with the provided message
+// else fatal with the provided message, potentially with arguments
+// for formatting
 #[macro_export]
 macro_rules! fatal_if_err {
     ($eval:expr; $msg:expr) => {{
@@ -19,4 +20,12 @@ macro_rules! fatal_if_err {
             crate::fatal!($msg,)
         }
     }};
+    ($eval:expr; $msg:expr $(,$args:expr)*) => {{
+        let result = $eval;
+        if let Ok(result_) = result {
+            result_
+        } else {
+            crate::fatal!($msg $(,$args)*)
+        }
+    }}
 }
