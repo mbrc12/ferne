@@ -2,6 +2,7 @@
 // into the destination directory.
 
 mod file;
+mod route;
 mod walker;
 
 pub use walker::*;

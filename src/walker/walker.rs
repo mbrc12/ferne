@@ -1,94 +1,101 @@
 use std::path::PathBuf;
 
+use anyhow::{Context, Result};
+
 use async_recursion::async_recursion;
 use tokio::task::JoinSet;
 use tracing::info;
 
-use super::file::process_file;
+use super::{
+    file::process_file,
+    route::{Route, RouteConfig, RouteContext},
+};
 
-use crate::{fatal_if_err, theme::TemplateRegistry, worker::SubmitQueue};
+use crate::{fatal, theme::TemplateRegistry};
+
+const ROOT: &str = "__root__.toml";
 
 #[derive(Clone, Debug)]
 pub struct Walker {
     source: PathBuf,
     destination: PathBuf,
 
-    queue: SubmitQueue,
-    registry: TemplateRegistry,
+    context: RouteContext,
 }
 
 impl Walker {
-    pub fn new(source: PathBuf, destination: PathBuf, queue: SubmitQueue, registry: TemplateRegistry) -> Self {
+    pub fn new(source: PathBuf, destination: PathBuf, registry: TemplateRegistry) -> Self {
         Walker {
             source,
             destination,
-            queue,
-            registry
+            context: RouteContext {
+                registry,
+                config: RouteConfig::new(),
+            },
         }
     }
 
     pub async fn walk(self: Self) {
-        walk(self).await // delegated to walk function below
+        let routes = walk_directory(self).await;
+        if let Err(err) = routes {
+            fatal!("Error: {}", err.to_string());
+        }
     }
-}
-
-pub struct Route {
-    output_path: PathBuf,
-
-    markdown: String,
-    html: String,
-
-    theme_name: String,
-    partial_id: String,
-
-    config: toml::Table,
-    extra: toml::Table,
-
-    children: Vec<Route>,
-}
-
-async fn walk(config: Walker) {
-    let route_tree = walk_directory(config).await;
-    todo!()
 }
 
 #[async_recursion]
-async fn walk_directory(
-    config: Walker
-) -> Route {
+async fn walk_directory(config: Walker) -> Result<Route> {
     let Walker {
         source,
         destination,
-        queue,
-        registry
+        context,
     } = &config;
 
-    let mut entries = fatal_if_err!(tokio::fs::read_dir(&source).await; 
-            "Could not read path `{}`", source.display());
+    let mut entries = tokio::fs::read_dir(&source)
+        .await
+        .context(format!("Could not read directory `{}`", source.display()))?;
 
-    let mut children = JoinSet::new(); // spawn handles for all the recursive calls below
+    let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    while let Ok(entry_) = entries.next_entry().await {
+        let entry = entry_.context(format!("Failed to read directory `{}`", source.display()))?;
+
         info!("Reading `{}`", entry.path().display());
 
-        let ft = fatal_if_err!(entry.file_type().await; 
-            "Failed to read file-type for `{}`", entry.path().display());
+        let ft = entry.file_type().await.context(format!(
+            "Failed to read file-type for `{}`",
+            entry.path().display()
+        ))?;
 
         let name = entry.file_name();
 
-        let config = config.clone();
+        let mut config = config.clone();
 
-        children.spawn(async move {
-            if ft.is_dir() {
-                walk_directory(config).await;
-            } else if ft.is_file() {
-                process_file(config).await;
-            }
-        });
+        // spawn tasks for child routes
+        if ft.is_dir() {
+            config.source.push(&name);
+            config.destination.push(&name);
+
+            children_tasks.spawn(walk_directory(config));
+        } else if ft.is_file() {
+            children_tasks.spawn(process_file(config, name));
+        };
     }
 
-    while let Some(result) = children.join_next().await {
-        let route = fatal_if_err!(result; "Failed to finish join for a subpath!");
+    let mut children = vec![];
+
+    // wait on the tasks for children and add them to the current list of children routes
+    while let Some(result) = children_tasks.join_next().await {
+        let route = result
+            .context(format!(
+                "Failed to finish join for subpath `{}`!",
+                source.display()
+            ))?
+            .context(format!(
+                "Error encountered while parsing subpath `{}`!",
+                source.display()
+            ))?;
+        children.push(route);
     }
 
     todo!()

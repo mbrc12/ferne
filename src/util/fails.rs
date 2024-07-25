@@ -1,7 +1,7 @@
 // Fatal exit with a message, combined with panic="abort" in Cargo.toml
 #[macro_export]
 macro_rules! fatal {
-    ($fmt:expr, $($x:expr),*) => {{
+    ($fmt:expr $(,$x:expr)*) => {{
         tracing::error!($fmt, $($x,)*);
         panic!("Unhandled error")
     }};
@@ -17,7 +17,7 @@ macro_rules! fatal_if_err {
         if let Ok(result_) = result {
             result_
         } else {
-            crate::fatal!($msg,)
+            crate::fatal!($msg)
         }
     }};
     ($eval:expr; $msg:expr $(,$args:expr)*) => {{

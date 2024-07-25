@@ -1,12 +1,20 @@
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use handlebars::Handlebars;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::worker::SubmitQueue;
+use crate::{fatal, fatal_if_err, worker::SubmitQueue};
+
+// default slot used for main body of the content,
+// sync this with BASE_TEMPLATE_CONTENTS below
+pub const CONTENT_SLOT: &str = "__content__";
+
+// template which does nothing except show the raw content
+pub const BASE_TEMPLATE_NAME: &str = "__BASE__";
+pub const BASE_TEMPLATE_CONTENTS: &str = "{{__content__}}";
 
 #[derive(Clone, Debug)]
 pub struct TemplateRegistry {
@@ -15,34 +23,42 @@ pub struct TemplateRegistry {
     next_tag_idx: Arc<Mutex<u64>>,
 }
 
-pub type TemplateTag = String;
-
 // match lines of type "--- name  : hello_world  " and extract "hello_world"
 const NAME_REGEX_SPEC: &str = r"^---\s*name\s*:\s*([a-zA-Z0-9_]+)\s*$";
 
 impl TemplateRegistry {
     pub fn new(queue: SubmitQueue) -> Self {
+        let mut hb = Handlebars::new();
+        hb.register_partial(BASE_TEMPLATE_NAME, BASE_TEMPLATE_CONTENTS);
+
         TemplateRegistry {
             queue,
-            hb: Arc::new(RwLock::new(Handlebars::new())),
+            hb: Arc::new(RwLock::new(hb)),
             next_tag_idx: Arc::new(Mutex::new(0)),
         }
+    }
+
+    pub async fn has_template(self: &Self, name: &str) -> bool {
+        let hb = self.hb.read().await;
+        return hb.has_template(name);
     }
 
     // Load a template file, split into parts, and register it.
     // Each partial starts with a header line that looks like --- name: foobar
     // Then this loads all the found templates into the registry
-    pub async fn load_template(
-        self: Self,
-        tag: Option<TemplateTag>,
-        path: String,
-    ) -> anyhow::Result<TemplateTag> {
+    pub async fn load_template(self: Self, name: Option<String>, path: String) -> Result<String> {
         static NAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(NAME_REGEX_SPEC).unwrap());
 
         // Use provided tag or produce a new tag
-        let tag: TemplateTag = {
-            if let Some(tag_) = tag {
-                tag_
+        let name: String = {
+            if let Some(name_) = name {
+                if self.has_template(&name_).await {
+                    anyhow::bail!(
+                        "Template with name `{}` already present in registry!",
+                        name_
+                    )
+                }
+                name_
             } else {
                 let mut idx_lock = self.next_tag_idx.lock().await;
                 *idx_lock += 1;
@@ -50,7 +66,7 @@ impl TemplateRegistry {
             }
         };
 
-        let data = self.queue.submit(path).await.get().await.clone(); // clone the result string
+        let data = self.queue.submit(path.clone()).await?.get().await.clone(); // clone the result string
 
         let lines = data.lines().collect::<Vec<_>>();
 
@@ -62,7 +78,7 @@ impl TemplateRegistry {
             if let Some(captures) = potential_match {
                 if captures.len() != 1 {
                     // there should be exactly one match
-                    anyhow::bail!("Failed to parse template!");
+                    anyhow::bail!("Failed to parse template `{}`.", path);
                 }
 
                 let name = captures.get(0).unwrap(); // has to succeed since regex has 1 group;
@@ -74,7 +90,7 @@ impl TemplateRegistry {
         let mut hb_write = self.hb.write().await;
 
         for idx in 0..starts.len() {
-            let name = starts[idx].0;
+            let id = starts[idx].0;
 
             let end = if idx == starts.len() {
                 lines.len()
@@ -88,10 +104,10 @@ impl TemplateRegistry {
             }
 
             hb_write
-                .register_partial(&format!("{}:{}", tag, name), buf)
-                .context("Failed to register template to registry!")?
+                .register_partial(&format!("{}:{}", name, id), buf)
+                .context(format!("Failed to register template {} to registry!", path))?
         }
 
-        Ok(tag) // write lock dropped here
+        Ok(name) // write lock dropped here
     }
 }

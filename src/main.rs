@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 
     let template_registry = theme::TemplateRegistry::new(queue.clone());
 
-    walker::Walker::new(source, destination, queue, template_registry)
+    walker::Walker::new(source, destination, template_registry)
         .walk()
         .await;
 

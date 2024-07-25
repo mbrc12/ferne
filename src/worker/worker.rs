@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use anyhow::{Context, Result};
+
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
-
-use crate::fatal_if_err;
 
 use super::{loaders, resource::Resource};
 
@@ -28,7 +28,7 @@ pub struct SubmitQueue(mpsc::Sender<LoadTask>);
 impl SubmitQueue {
     // panic if submit fails,
     // does not make sense to propagate handling this error into the caller
-    pub async fn submit<T: ToString>(self: Self, path: T) -> LoadResponse {
+    pub async fn submit<T: ToString>(self: Self, path: T) -> Result<LoadResponse> {
         let path = path.to_string();
 
         info!("Queueing fetch for {}", path);
@@ -36,8 +36,13 @@ impl SubmitQueue {
         let (send, recv) = oneshot::channel::<LoadResponse>();
         let task = LoadTask { path, chan: send };
 
-        fatal_if_err! { self.0.send(task).await; "Failed to send task to worker" };
-        fatal_if_err! { recv.await; "Failed to receive response from worker!" }
+        self.0
+            .send(task)
+            .await
+            .context("Failed to send task to worker")?;
+
+        recv.await
+            .context("Failed to receive response from worker!")
     }
 }
 
