@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -6,14 +6,11 @@ use async_recursion::async_recursion;
 use tokio::task::JoinSet;
 use tracing::info;
 
-use super::{
-    file::process_file,
-    route::{Route, RouteConfig, RouteContext},
-};
+use super::route::{Route, RouteConfig, RouteContext, RouteDetails};
 
-use crate::{fatal, theme::TemplateRegistry};
+use crate::{fatal, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
 
-const ROOT: &str = "__root__.toml";
+const COMMON_CONFIG_FILE: &str = "common.toml";
 
 #[derive(Clone, Debug)]
 pub struct Walker {
@@ -30,7 +27,7 @@ impl Walker {
             destination,
             context: RouteContext {
                 registry,
-                config: RouteConfig::new(),
+                config: RouteConfig::default(),
             },
         }
     }
@@ -54,6 +51,8 @@ async fn walk_directory(config: Walker) -> Result<Route> {
     let mut entries = tokio::fs::read_dir(&source)
         .await
         .context(format!("Could not read directory `{}`", source.display()))?;
+
+    tokio::fs::create_dir(destination).await?;
 
     let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
 
@@ -98,5 +97,24 @@ async fn walk_directory(config: Walker) -> Result<Route> {
         children.push(route);
     }
 
+    let route_details = RouteDetails::Dir(DirectoryRoute { children });
+
+    let common_toml = {
+        let mut common_toml_path = source.clone();
+        common_toml_path.push(COMMON_CONFIG_FILE);
+        util::toml::read(&common_toml_path).await
+    }?;
+
+    let route_config = context.clone().route_config_from_toml(common_toml).await?;
+
+    Ok(Route {
+        config: route_config,
+        details: route_details,
+    })
+}
+
+#[async_recursion]
+pub async fn process_file(config: Walker, name: OsString) -> Result<Route> {
+    dbg!(config);
     todo!()
 }

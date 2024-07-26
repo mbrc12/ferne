@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let (resource_worker, queue) = worker::Worker::new(source.clone());
     tokio::spawn(resource_worker.work());
 
-    let template_registry = theme::TemplateRegistry::new(queue.clone());
+    let template_registry = theme::TemplateRegistry::new(queue.clone())?;
 
     walker::Walker::new(source, destination, template_registry)
         .walk()

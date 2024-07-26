@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-use crate::{fatal, fatal_if_err};
-
 const REPLACE_FLAG: &str = "__replace__";
 
 // assert that a toml key is a string, return error if not
@@ -57,7 +55,7 @@ pub fn merge(mut base: toml::Table, overlay: toml::Table) -> Result<toml::Table>
                 Table(table) => {
                     if replace {
                         if let Table(overlay_table) = value {
-                            *previous_value = Table(merge(table.clone(), overlay_table))
+                            *previous_value = Table(merge(table.clone(), overlay_table)?)
                         } else {
                             anyhow::bail!("Type error during table merge!");
                         }

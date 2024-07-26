@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{fatal, fatal_if_err, worker::SubmitQueue};
+use crate::{walker::RouteConfig, worker::SubmitQueue};
 
 // default slot used for main body of the content,
 // sync this with BASE_TEMPLATE_CONTENTS below
@@ -27,15 +27,15 @@ pub struct TemplateRegistry {
 const NAME_REGEX_SPEC: &str = r"^---\s*name\s*:\s*([a-zA-Z0-9_]+)\s*$";
 
 impl TemplateRegistry {
-    pub fn new(queue: SubmitQueue) -> Self {
+    pub fn new(queue: SubmitQueue) -> Result<Self> {
         let mut hb = Handlebars::new();
-        hb.register_partial(BASE_TEMPLATE_NAME, BASE_TEMPLATE_CONTENTS);
+        hb.register_partial(BASE_TEMPLATE_NAME, BASE_TEMPLATE_CONTENTS)?;
 
-        TemplateRegistry {
+        Ok(TemplateRegistry {
             queue,
             hb: Arc::new(RwLock::new(hb)),
             next_tag_idx: Arc::new(Mutex::new(0)),
-        }
+        })
     }
 
     pub async fn has_template(self: &Self, name: &str) -> bool {
@@ -109,5 +109,29 @@ impl TemplateRegistry {
         }
 
         Ok(name) // write lock dropped here
+    }
+
+    pub async fn render_template(
+        self: Self,
+        content: &str,
+        config: &RouteConfig,
+    ) -> Result<String> {
+        let TemplateRegistry { hb, .. } = self;
+        let name = config.theme.name.to_owned();
+
+        let hb = hb.read().await;
+
+        // render the markdown using the configuration (other than theme)
+        let md_as_html = hb.render_template(content, &config.rest)?;
+
+        // then render the theme with the rendered markdown as content
+        // first copy the theme config, and insert the content
+        // use that as the data to render the template
+        let mut config_with_content = config.theme.rest.clone();
+        config_with_content.insert(CONTENT_SLOT.to_owned(), toml::Value::String(md_as_html));
+
+        let rendered = hb.render(&name, &config_with_content)?;
+
+        Ok(rendered) // read lock dropped here
     }
 }
