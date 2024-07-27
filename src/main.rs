@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let destination = PathBuf::from(destination);
 
     info!(
-        "Building files from {} to {}.",
+        "Building files from `{}` to `{}`.",
         source.display(),
         destination.display()
     );
