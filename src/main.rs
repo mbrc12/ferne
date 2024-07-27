@@ -40,6 +40,10 @@ async fn main() -> anyhow::Result<()> {
         destination.display()
     );
 
+    if force {
+        info!("Deleting folders while rebuilding due to --force flag set.");
+    }
+
     let (resource_worker, queue) = worker::Worker::new(source.clone());
     tokio::spawn(resource_worker.work());
 

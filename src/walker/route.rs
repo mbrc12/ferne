@@ -106,10 +106,17 @@ impl RouteContext {
         Ok(RouteConfig { theme, rest })
     }
 
-    pub async fn file_route_from_content(self: Self, content: String) -> Result<FileRoute> {
+    pub async fn merge_toml(self: Self, table: toml::Table) -> Result<Self> {
+        Ok(RouteContext {
+            registry: self.registry.clone(),
+            config: self.route_config_from_toml(table).await?,
+        })
+    }
+
+    pub async fn file_route_from_content(self: &Self, content: String) -> Result<FileRoute> {
         let RouteContext { registry, config } = self;
 
-        let html = registry.render_template(&content, &config).await?;
+        let html = registry.clone().render_template(&content, &config).await?;
         Ok(FileRoute { html })
     }
 }

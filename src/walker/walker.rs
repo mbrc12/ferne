@@ -40,29 +40,15 @@ impl Walker {
     }
 
     pub async fn walk(self: Self) {
-        // Setup the destination directory
-        let dest_display = self.destination.display();
-
-        let exists = fatal_if_err!(tokio::fs::try_exists(&self.destination).await;
-            "Failed to check directory {}", dest_display);
-        if exists {
-            if !self.force {
-                fatal!("Directory {} exists! Use the option `--force` to delete the directory and use it as target.", 
-                    dest_display);
-            } else {
-                fatal_if_err!(tokio::fs::remove_dir(&self.destination).await; 
-                    "Failed to delete directory {}!", dest_display);
-            }
-        }
-
-        fatal_if_err!(tokio::fs::create_dir(&self.destination).await;
-            "Failed to create directory {}", dest_display);
+        util::dir::remove_and_create(&self.destination, self.force).await;
 
         // Walk the source
         let routes = process_directory(self).await;
         if let Err(err) = routes {
             fatal!("Error: {}", err.to_string());
         }
+
+        dbg!(routes.unwrap());
     }
 }
 
@@ -70,18 +56,15 @@ impl Walker {
 #[async_recursion]
 async fn process_directory(config: Walker) -> Result<Option<Route>> {
     let Walker {
-        source,
-        destination,
-        context,
-        ..
+        source, context, ..
     } = &config;
+
+    // Create destination directory
+    util::dir::remove_and_create(&config.destination, config.force).await;
 
     let mut entries = tokio::fs::read_dir(&source)
         .await
         .context(format!("Could not read directory `{}`", source.display()))?;
-
-    // Produce the directory in the destination
-    tokio::fs::create_dir(destination).await?;
 
     let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
 
@@ -112,6 +95,15 @@ async fn process_directory(config: Walker) -> Result<Option<Route>> {
 
     let mut children = vec![];
 
+    let common_toml = {
+        let mut common_toml_path = source.clone();
+        common_toml_path.push(COMMON_CONFIG_FILE);
+        util::toml::read(&common_toml_path).await
+    }?;
+
+    // update context with common toml
+    let context = context.clone().merge_toml(common_toml).await?;
+
     // wait on the tasks for children and add them to the current list of children routes
     while let Some(result) = children_tasks.join_next().await {
         let route = result
@@ -131,16 +123,8 @@ async fn process_directory(config: Walker) -> Result<Option<Route>> {
 
     let route_details = RouteDetails::Dir(DirectoryRoute { children });
 
-    let common_toml = {
-        let mut common_toml_path = source.clone();
-        common_toml_path.push(COMMON_CONFIG_FILE);
-        util::toml::read(&common_toml_path).await
-    }?;
-
-    let route_config = context.clone().route_config_from_toml(common_toml).await?;
-
     Ok(Some(Route {
-        config: route_config,
+        config: context.config,
         details: route_details,
     }))
 }
@@ -165,13 +149,14 @@ pub async fn process_file(config: Walker, name: OsString) -> Result<Option<Route
     let name = PathBuf::from(name);
 
     if !ext_is(&name, "md") {
-        return Ok(None) // do not process this file
+        return Ok(None); // do not process this file
     }
 
     let stem = name
         .file_stem()
         .context(format!("File name cannot be parsed!"))?
-        .to_string_lossy();
+        .to_string_lossy()
+        .into_owned();
 
     let file_config = {
         let mut path = config.source.clone();
@@ -185,5 +170,24 @@ pub async fn process_file(config: Walker, name: OsString) -> Result<Option<Route
         util::markdown::read(&path).await?
     };
 
-    todo!()
+    // Update old context with new config
+    let context = config.context.merge_toml(file_config).await?;
+
+    // use new context to produce the route
+    let route = context.file_route_from_content(content).await?;
+
+    let dest_path = {
+        let mut path = config.destination.clone();
+        path.push(format!("{}.html", stem));
+        path
+    };
+
+    // Write to file
+    fatal_if_err!(tokio::fs::write(&dest_path, &route.html).await;
+        "Failed to write to path `{}`.", dest_path.display());
+
+    Ok(Some(Route {
+        config: context.config,
+        details: RouteDetails::File(route),
+    }))
 }
