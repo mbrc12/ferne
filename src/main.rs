@@ -6,7 +6,6 @@ mod worker;
 use std::path::PathBuf;
 
 use clap::Parser;
-// use tokio::task::JoinSet;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -17,6 +16,9 @@ struct CLIArguments {
 
     #[arg(short, long, default_value = "./build")]
     destination: String,
+
+    #[arg(short, long, default_value_t = false)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -26,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let CLIArguments {
         source,
         destination,
+        force,
     } = CLIArguments::parse();
 
     let source = PathBuf::from(source);
@@ -42,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
 
     let template_registry = theme::TemplateRegistry::new(queue.clone())?;
 
-    walker::Walker::new(source, destination, template_registry)
+    walker::Walker::new(source, destination, force, template_registry)
         .walk()
         .await;
 

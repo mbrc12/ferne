@@ -8,7 +8,7 @@ use tracing::info;
 
 use super::route::{Route, RouteConfig, RouteContext, RouteDetails};
 
-use crate::{fatal, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
+use crate::{fatal, fatal_if_err, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
 
 const COMMON_CONFIG_FILE: &str = "common.toml";
 
@@ -16,15 +16,22 @@ const COMMON_CONFIG_FILE: &str = "common.toml";
 pub struct Walker {
     source: PathBuf,
     destination: PathBuf,
+    force: bool,
 
     context: RouteContext,
 }
 
 impl Walker {
-    pub fn new(source: PathBuf, destination: PathBuf, registry: TemplateRegistry) -> Self {
+    pub fn new(
+        source: PathBuf,
+        destination: PathBuf,
+        force: bool,
+        registry: TemplateRegistry,
+    ) -> Self {
         Walker {
             source,
             destination,
+            force,
             context: RouteContext {
                 registry,
                 config: RouteConfig::default(),
@@ -33,25 +40,47 @@ impl Walker {
     }
 
     pub async fn walk(self: Self) {
-        let routes = walk_directory(self).await;
+        // Setup the destination directory
+        let dest_display = self.destination.display();
+
+        let exists = fatal_if_err!(tokio::fs::try_exists(&self.destination).await;
+            "Failed to check directory {}", dest_display);
+        if exists {
+            if !self.force {
+                fatal!("Directory {} exists! Use the option `--force` to delete the directory and use it as target.", 
+                    dest_display);
+            } else {
+                fatal_if_err!(tokio::fs::remove_dir(&self.destination).await; 
+                    "Failed to delete directory {}!", dest_display);
+            }
+        }
+
+        fatal_if_err!(tokio::fs::create_dir(&self.destination).await;
+            "Failed to create directory {}", dest_display);
+
+        // Walk the source
+        let routes = process_directory(self).await;
         if let Err(err) = routes {
             fatal!("Error: {}", err.to_string());
         }
     }
 }
 
+// Uses option to match the type of process_file below
 #[async_recursion]
-async fn walk_directory(config: Walker) -> Result<Route> {
+async fn process_directory(config: Walker) -> Result<Option<Route>> {
     let Walker {
         source,
         destination,
         context,
+        ..
     } = &config;
 
     let mut entries = tokio::fs::read_dir(&source)
         .await
         .context(format!("Could not read directory `{}`", source.display()))?;
 
+    // Produce the directory in the destination
     tokio::fs::create_dir(destination).await?;
 
     let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
@@ -75,7 +104,7 @@ async fn walk_directory(config: Walker) -> Result<Route> {
             config.source.push(&name);
             config.destination.push(&name);
 
-            children_tasks.spawn(walk_directory(config));
+            children_tasks.spawn(process_directory(config));
         } else if ft.is_file() {
             children_tasks.spawn(process_file(config, name));
         };
@@ -94,7 +123,10 @@ async fn walk_directory(config: Walker) -> Result<Route> {
                 "Error encountered while parsing subpath `{}`!",
                 source.display()
             ))?;
-        children.push(route);
+
+        if let Some(route_) = route {
+            children.push(route_);
+        }
     }
 
     let route_details = RouteDetails::Dir(DirectoryRoute { children });
@@ -107,14 +139,51 @@ async fn walk_directory(config: Walker) -> Result<Route> {
 
     let route_config = context.clone().route_config_from_toml(common_toml).await?;
 
-    Ok(Route {
+    Ok(Some(Route {
         config: route_config,
         details: route_details,
-    })
+    }))
 }
 
+// check if extension matches
+fn ext_is(val: &PathBuf, ext: &str) -> bool {
+    if let Some(val_) = val.extension() {
+        if val_.to_string_lossy().eq(ext) {
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
+// Returns Ok(None) if the path should be ignored currently (for example
+// if it is a .toml file). Currently ignores everything that is not a .md
 #[async_recursion]
-pub async fn process_file(config: Walker, name: OsString) -> Result<Route> {
-    dbg!(config);
+pub async fn process_file(config: Walker, name: OsString) -> Result<Option<Route>> {
+    let name = PathBuf::from(name);
+
+    if !ext_is(&name, "md") {
+        return Ok(None) // do not process this file
+    }
+
+    let stem = name
+        .file_stem()
+        .context(format!("File name cannot be parsed!"))?
+        .to_string_lossy();
+
+    let file_config = {
+        let mut path = config.source.clone();
+        path.push(format!("{}.toml", stem));
+        util::toml::read(&path).await?
+    };
+
+    let content = {
+        let mut path = config.source.clone();
+        path.push(name);
+        util::markdown::read(&path).await?
+    };
+
     todo!()
 }

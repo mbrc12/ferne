@@ -16,6 +16,7 @@ pub struct Route {
     pub details: RouteDetails,
 }
 
+// Use Cow on this at some point
 #[derive(Clone, Debug)]
 pub struct RouteConfig {
     pub theme: ThemeConfig,
@@ -105,7 +106,7 @@ impl RouteContext {
         Ok(RouteConfig { theme, rest })
     }
 
-    pub async fn file_route_from_context(self: Self, content: String) -> Result<FileRoute> {
+    pub async fn file_route_from_content(self: Self, content: String) -> Result<FileRoute> {
         let RouteContext { registry, config } = self;
 
         let html = registry.render_template(&content, &config).await?;
