@@ -3,7 +3,7 @@
 macro_rules! fatal {
     ($fmt:expr $(,$x:expr)*) => {{
         tracing::error!($fmt, $($x,)*);
-        panic!("Unhandled error")
+        panic!("Exiting program.")
     }};
 }
 

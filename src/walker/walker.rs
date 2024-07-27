@@ -68,8 +68,19 @@ async fn process_directory(config: Walker) -> Result<Option<Route>> {
 
     let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
 
-    while let Ok(entry_) = entries.next_entry().await {
-        let entry = entry_.context(format!("Failed to read directory `{}`", source.display()))?;
+    loop {
+        let entry = {
+            let entry = entries
+                .next_entry()
+                .await
+                .context(format!("Failed to read directory `{}`", source.display()))?;
+            if let Some(entry_) = entry {
+                entry_
+            } else {
+                // if option is none, then we have finished reading the directory
+                break;
+            }
+        };
 
         info!("Reading `{}`", entry.path().display());
 

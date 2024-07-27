@@ -14,7 +14,7 @@ pub const CONTENT_SLOT: &str = "__content__";
 
 // template which does nothing except show the raw content
 pub const BASE_TEMPLATE_NAME: &str = "__BASE__";
-pub const BASE_TEMPLATE_CONTENTS: &str = "{{__content__}}";
+pub const BASE_TEMPLATE_CONTENTS: &str = "{{{__content__}}}";
 
 #[derive(Clone, Debug)]
 pub struct TemplateRegistry {
