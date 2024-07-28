@@ -3,12 +3,11 @@ use std::{ffi::OsString, path::PathBuf};
 use anyhow::{Context, Result};
 
 use async_recursion::async_recursion;
-use tokio::task::JoinSet;
 use tracing::info;
 
 use super::route::{Route, RouteConfig, RouteContext, RouteDetails};
 
-use crate::{fatal, fatal_if_err, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
+use crate::{fatal, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
 
 const COMMON_CONFIG_FILE: &str = "__common.toml";
 
@@ -83,7 +82,7 @@ async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
         .await
         .context(format!("Could not read directory `{}`", source.display()))?;
 
-    let mut children_tasks = JoinSet::new(); // spawn handles for all the recursive calls below
+    let mut children_tasks = tokio::task::JoinSet::new(); // spawn handles for all the recursive calls below
 
     loop {
         let entry = {
@@ -170,7 +169,7 @@ fn ext_is(val: &PathBuf, ext: &str) -> bool {
 // Returns Ok(None) if the path should be ignored currently (for example
 // if it is a .toml file). Currently ignores everything that is not a .md
 #[async_recursion]
-pub async fn process_file(config: Walker, name: OsString) -> Result<Option<Route>> {
+pub async fn process_file(mut walker: Walker, name: OsString) -> Result<Option<Route>> {
     let name = PathBuf::from(name);
 
     let stem = name
@@ -180,32 +179,38 @@ pub async fn process_file(config: Walker, name: OsString) -> Result<Option<Route
         .into_owned();
 
     let file_config = {
-        let mut path = config.source.clone();
+        let mut path = walker.source.clone();
         path.push(format!("{}.toml", stem));
         util::toml::read(&path).await?
     };
 
     let content = {
-        let mut path = config.source.clone();
+        let path = &mut walker.source;
         path.push(name);
-        util::markdown::read(&path).await?
+        let content = util::markdown::read(&path).await?;
+        path.pop();
+        content
     };
 
     // Update old context with new config
-    let context = config.context.merge_toml(file_config).await?;
+    let context = walker.context.merge_toml(file_config).await?;
 
     // use new context to produce the route
     let route = context.file_route_from_content(content).await?;
 
     let dest_path = {
-        let mut path = config.destination.clone();
+        let mut path = walker.destination.clone();
         path.push(format!("{}.html", stem));
         path
     };
 
     // Write to file
-    fatal_if_err!(tokio::fs::write(&dest_path, &route.html).await;
-        "Failed to write to path `{}`.", dest_path.display());
+    tokio::fs::write(&dest_path, &route.html)
+        .await
+        .context(format!(
+            "Failed to write to path `{}`.",
+            dest_path.display()
+        ))?;
 
     Ok(Some(Route {
         config: context.config,

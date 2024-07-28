@@ -53,38 +53,5 @@ async fn main() -> anyhow::Result<()> {
         .walk()
         .await;
 
-    // spawn the resource worker
-
-    // let mut joinset = JoinSet::new();
-    //
-    // for _ in 0..3 {
-    //     let queue_ = queue.clone();
-    //
-    //     joinset.spawn(async move {
-    //         let cell = queue_.submit("https://google.com/xyzw").await.unwrap();
-    //         info!("{}", cell.get().await);
-    //     });
-    // }
-    //
-    // for _ in 0..3 {
-    //     let queue_ = queue.clone();
-    //
-    //     joinset.spawn(async move {
-    //         let cell = queue_.submit("index.md").await.unwrap();
-    //         info!("{}", cell.get().await);
-    //     });
-    // }
-    //
-    // while joinset.join_next().await.is_some() {}
-
-    // spawn the directory walker
-    // tokio::spawn(walker::walker_entrypoint(
-    //     walker::WalkerConfig {
-    //         source,
-    //         destination,
-    //     },
-    //     queue,
-    // ));
-
     Ok(())
 }
