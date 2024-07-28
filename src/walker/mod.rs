@@ -4,5 +4,5 @@
 mod route;
 mod walker;
 
-pub use route::RouteConfig;
+pub use route::{RouteConfig, ThemeConfig};
 pub use walker::*;

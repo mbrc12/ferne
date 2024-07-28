@@ -2,13 +2,14 @@ use anyhow::Result;
 
 use crate::{
     assert_toml_kind,
-    theme::{TemplateRegistry, BASE_TEMPLATE_NAME},
+    theme::{TemplateRegistry, BASE_NAME, MAIN_KIND},
     util,
 };
 
 const THEME_PATH_KEY: &str = "path";
 const THEME_NAME_KEY: &str = "name";
 const THEME_TABLE_KEY: &str = "theme";
+const PARTIAL_KEY: &str = "kind";
 
 #[derive(Clone, Debug)]
 pub struct Route {
@@ -27,6 +28,7 @@ pub struct RouteConfig {
 #[derive(Clone, Debug)]
 pub struct ThemeConfig {
     pub name: String, // this is used as the TemplateName
+    pub kind: String, // this is used as the partial name
 
     pub rest: toml::Table,
 }
@@ -35,7 +37,8 @@ impl Default for RouteConfig {
     fn default() -> Self {
         RouteConfig {
             theme: ThemeConfig {
-                name: BASE_TEMPLATE_NAME.to_string(),
+                name: BASE_NAME.to_string(),
+                kind: MAIN_KIND.to_string(),
                 rest: toml::Table::new(),
             },
             rest: toml::Table::new(),
@@ -68,27 +71,38 @@ pub struct RouteContext {
 
 impl RouteContext {
     async fn theme_config_from_toml(self: Self, mut table: toml::Table) -> Result<ThemeConfig> {
+        // inherit old partial name if not present, otherwise use the new partial name
         // if theme_path is present, load it. if there is a theme_name, use that for the name
         // if there is a conflict, error (which is done in the load_template function)
         // if theme_path is absent, check if theme_name is in the registry, else error
 
-        let theme_name_raw = assert_toml_kind!(String; table, THEME_NAME_KEY)?;
+        let name_raw = assert_toml_kind!(String; table, THEME_NAME_KEY)?;
         let theme_path = assert_toml_kind!(String; table, THEME_PATH_KEY)?;
+        let kind_raw = assert_toml_kind!(String; table, PARTIAL_KEY)?;
 
         table.remove(THEME_NAME_KEY);
         table.remove(THEME_PATH_KEY);
+        table.remove(PARTIAL_KEY);
 
         let name = {
             if let Some(path) = theme_path {
-                self.registry.load_template(theme_name_raw, path).await?
+                self.registry.load_template(name_raw, path).await?
             } else {
                 self.config.theme.name
             }
         };
 
+        let kind = {
+            if let Some(kind) = kind_raw {
+                kind
+            } else {
+                MAIN_KIND.to_owned()
+            }
+        };
+
         let rest = util::toml::merge(self.config.theme.rest, table)?;
 
-        Ok(ThemeConfig { name, rest })
+        Ok(ThemeConfig { name, kind, rest })
     }
 
     pub async fn route_config_from_toml(self: Self, mut table: toml::Table) -> Result<RouteConfig> {
