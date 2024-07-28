@@ -1,3 +1,7 @@
+// reuse a pathbuf by pushing and then popping
+// ENSURE that $rest is just one file name,  otherwise pop
+// does not function accurately
+//
 // use on a PathBuf as follows
 // use_path!(root, "file.md", path => {
 //  load_path(&path)
