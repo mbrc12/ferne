@@ -25,6 +25,13 @@ struct CLIArguments {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
+    let _ = std::panic::take_hook();
+    // dont display anything in panic since panics have errors associated to them.
+    std::panic::set_hook(Box::new(move |_| {
+        // default_panic(info);
+        std::process::exit(1);
+    }));
+
     let CLIArguments {
         source,
         destination,
