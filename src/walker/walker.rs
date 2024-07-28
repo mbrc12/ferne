@@ -119,7 +119,7 @@ async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
 
             // Recursively read directory
             children_tasks.spawn(process_directory(config));
-        } else if ft.is_file() && ext_is(&path, "md") {
+        } else if ft.is_file() && util::paths::ext_is(&path, "md") {
             // only run for .md files
             //
             // for files, the source/destination is not updated, but the name is passed
@@ -154,19 +154,6 @@ async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
         config: walker.context.config,
         details: route_details,
     }))
-}
-
-// check if extension matches
-fn ext_is(val: &PathBuf, ext: &str) -> bool {
-    if let Some(val_) = val.extension() {
-        if val_.to_string_lossy().eq(ext) {
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    }
 }
 
 // Returns Ok(None) if the path should be ignored currently (for example

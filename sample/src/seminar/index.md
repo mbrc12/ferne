@@ -1,7 +1,7 @@
 # Student Probability Seminar 
 ## {{when}}
 
-Never forget {{data}}
+_last updated_: {{last-updated}}
 
 {{#each sessions}}
 * {{this.name}} -- {{this.topic}}

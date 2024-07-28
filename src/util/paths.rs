@@ -29,3 +29,16 @@ pub async fn read(path: &PathBuf) -> anyhow::Result<String> {
         .await
         .context(format!("Failed to read file `{}`!", path.display()))
 }
+
+// check if extension matches
+pub fn ext_is(val: &PathBuf, ext: &str) -> bool {
+    if let Some(val_) = val.extension() {
+        if val_.to_string_lossy().eq(ext) {
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}

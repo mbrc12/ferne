@@ -144,6 +144,7 @@ impl TemplateRegistry {
         // render the markdown using the configuration (other than theme)
         let markdown = hb.render_template(content, &config.rest)?;
 
+        // convert markdown to html
         let md_as_html = util::markdown::to_html(&markdown);
 
         // then render the theme with the rendered markdown as content
