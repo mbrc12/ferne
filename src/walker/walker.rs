@@ -7,7 +7,7 @@ use tracing::info;
 
 use super::route::{Route, RouteConfig, RouteContext, RouteDetails};
 
-use crate::{fatal, theme::TemplateRegistry, util, walker::route::DirectoryRoute};
+use crate::{fatal, theme::TemplateRegistry, use_path, util, walker::route::DirectoryRoute};
 
 const COMMON_CONFIG_FILE: &str = "__common.toml";
 
@@ -54,15 +54,13 @@ impl Walker {
 // Uses option to match the type of process_file below
 #[async_recursion]
 async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
-    let common_toml = {
-        let mut common_toml_path = walker.source.clone();
-        common_toml_path.push(COMMON_CONFIG_FILE);
+    let common_toml = use_path!(walker.source, COMMON_CONFIG_FILE; path => {
         info!(
             "Found common configuration file: `{}`",
-            common_toml_path.display()
+            path.display()
         );
-        util::toml::read(&common_toml_path).await
-    }?;
+        util::toml::read(&path).await
+    })?;
 
     // update context with common toml
     let context = walker.context.clone().merge_toml(common_toml).await?;
@@ -184,13 +182,9 @@ pub async fn process_file(mut walker: Walker, name: OsString) -> Result<Option<R
         util::toml::read(&path).await?
     };
 
-    let content = {
-        let path = &mut walker.source;
-        path.push(name);
-        let content = util::markdown::read(&path).await?;
-        path.pop();
-        content
-    };
+    let content = use_path!(walker.source, name; path => {
+        util::markdown::read(&path).await?
+    });
 
     // Update old context with new config
     let context = walker.context.merge_toml(file_config).await?;
@@ -198,19 +192,15 @@ pub async fn process_file(mut walker: Walker, name: OsString) -> Result<Option<R
     // use new context to produce the route
     let route = context.file_route_from_content(content).await?;
 
-    let dest_path = {
-        let mut path = walker.destination.clone();
-        path.push(format!("{}.html", stem));
-        path
-    };
-
     // Write to file
-    tokio::fs::write(&dest_path, &route.html)
-        .await
-        .context(format!(
-            "Failed to write to path `{}`.",
-            dest_path.display()
-        ))?;
+    use_path!(walker.destination, format!("{}.html", stem); path => {
+        tokio::fs::write(&path, &route.html)
+            .await
+            .context(format!(
+                "Failed to write to path `{}`.",
+                path.display()
+            ))?
+    });
 
     Ok(Some(Route {
         config: context.config,
