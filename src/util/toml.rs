@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
+use super::paths;
+
 const REPLACE_FLAG: &str = "__replace__";
 
 // assert that a toml key is a string, return error if not
@@ -76,9 +78,7 @@ pub async fn read(path: &PathBuf) -> Result<toml::Table> {
     // Fails only if toml is provided but fails to parse. Missing file just returns an
     // empty table.
 
-    let contents = tokio::fs::read_to_string(path)
-        .await
-        .unwrap_or("".to_owned());
+    let contents = paths::read(path).await.unwrap_or("".to_owned());
 
     toml::from_str::<toml::Table>(&contents).context(format!(
         "Failed to parse toml in file `{}`.",

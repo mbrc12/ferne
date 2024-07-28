@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     qualified_partial,
-    util::theme_names::sanitize_name,
+    util::{self, theme_names::sanitize_name},
     walker::{RouteConfig, ThemeConfig},
     worker::SubmitQueue,
 };
@@ -142,7 +142,9 @@ impl TemplateRegistry {
         let hb = hb.read().await;
 
         // render the markdown using the configuration (other than theme)
-        let md_as_html = hb.render_template(content, &config.rest)?;
+        let markdown = hb.render_template(content, &config.rest)?;
+
+        let md_as_html = util::markdown::to_html(&markdown);
 
         // then render the theme with the rendered markdown as content
         // first copy the theme config, and insert the content

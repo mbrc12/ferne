@@ -1,3 +1,7 @@
+use std::path::PathBuf;
+
+use anyhow::Context;
+
 // reuse a pathbuf by pushing and then popping
 // ENSURE that $rest is just one file name,  otherwise pop
 // does not function accurately
@@ -17,4 +21,11 @@ macro_rules! use_path {
         $as.pop();
         result
     }};
+}
+
+// read a file with tokio
+pub async fn read(path: &PathBuf) -> anyhow::Result<String> {
+    tokio::fs::read_to_string(path)
+        .await
+        .context(format!("Failed to read file `{}`!", path.display()))
 }

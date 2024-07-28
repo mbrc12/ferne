@@ -13,9 +13,9 @@ const COMMON_CONFIG_FILE: &str = "__common.toml";
 
 #[derive(Clone, Debug)]
 pub struct Walker {
-    source: PathBuf,
-    destination: PathBuf,
-    force: bool,
+    source: PathBuf,      // source directory
+    destination: PathBuf, // destination directory
+    force: bool,          // delete folders if necessary
 
     context: RouteContext,
 }
@@ -110,6 +110,8 @@ async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
 
         // spawn tasks for child routes
         if ft.is_dir() {
+            // for directories, the config source/destination is updated to include the
+            // path to the directory
             config.source.push(&name);
             config.destination.push(&name);
 
@@ -119,6 +121,9 @@ async fn process_directory(mut walker: Walker) -> Result<Option<Route>> {
             children_tasks.spawn(process_directory(config));
         } else if ft.is_file() && ext_is(&path, "md") {
             // only run for .md files
+            //
+            // for files, the source/destination is not updated, but the name is passed
+            // as a separate argument
             info!("Reading file `{}`", disp);
             children_tasks.spawn(process_file(config, name));
         };
@@ -176,14 +181,12 @@ pub async fn process_file(mut walker: Walker, name: OsString) -> Result<Option<R
         .to_string_lossy()
         .into_owned();
 
-    let file_config = {
-        let mut path = walker.source.clone();
-        path.push(format!("{}.toml", stem));
-        util::toml::read(&path).await?
-    };
+    let file_config = use_path!(walker.source, format!("{}.toml", stem); path => {
+        util::toml::read(&path).await
+    })?;
 
     let content = use_path!(walker.source, name; path => {
-        util::markdown::read(&path).await?
+        util::paths::read(&path).await?
     });
 
     // Update old context with new config

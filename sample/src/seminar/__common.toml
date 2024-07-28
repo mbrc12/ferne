@@ -1,1 +1,9 @@
 when = "Fall 2024"
+
+[[sessions]]
+name = "Rin Noe"
+topic = "Spectral theory"
+
+[[sessions]]
+name = "Mu Gamma"
+topic = "Probability"
